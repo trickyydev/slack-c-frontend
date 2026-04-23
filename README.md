@@ -1,0 +1,176 @@
+# Care Package Inbox
+
+Cloudflare-first upload app foundation for a public `/inbox` route where people can send you a "care package" of files or folders.
+
+## Read Order
+
+1. `README.md`
+2. `WORK_IN_PROGRESS.md`
+3. `wrangler.jsonc`
+4. `worker/index.ts`
+5. component and script docs as needed
+
+## Cloudflare Account Safety
+
+This project must use only the following Cloudflare account:
+
+- allowed account email: `trickyydev@gmail.com`
+- allowed account ID: `c720a46967ac565c8319ce48e3c2bcff`
+
+Do not create, deploy, bind, or modify any resources for this project under:
+
+- forbidden account email: `Greenlight.project9@gmail.com`
+- forbidden account ID: `617052ba599e50f8ba56a9b08ed34a23`
+
+This rule is important enough to treat as an operator safety requirement, not a suggestion.
+
+## Stack
+
+- React + Vite
+- Cloudflare Workers with Static Assets
+- Cloudflare R2 for uploaded files
+- Cloudflare D1 for care package metadata
+- Cloudflare Durable Objects for atomic quota reservations
+- Cloudflare Turnstile for upload verification
+
+## Current scope
+
+This repo is intentionally backend-first. It includes:
+
+- a Cloudflare Worker API for upload session creation and resumable uploads
+- a D1 schema for care packages, files, and upload codes
+- a quota coordinator Durable Object that enforces reserved bytes
+- a minimal React placeholder instead of the final UI
+
+The visual inbox flow and admin interface are intentionally deferred.
+
+## Core behavior
+
+- Public uploads do not require a code by default.
+- All uploads require a valid Turnstile token.
+- Anonymous uploads are capped by a rolling hourly quota.
+- Total bucket usage is capped with reserved bytes.
+- Upload codes are reusable until they expire and bypass the public hourly cap.
+- Folder uploads preserve relative paths.
+- Large files use multipart uploads with resume-friendly state stored in D1.
+
+## Default assumptions
+
+These are wired as environment variables today and can move into the admin panel later:
+
+- bucket cap: `10 GB`
+- public rolling hourly cap: `6 GB`
+- public per-care-package cap: `2 GB`
+- multipart chunk size: `8 MiB`
+- direct upload max: `32 MiB`
+- session TTL: `24 hours`
+
+## Project layout
+
+- [WORK_IN_PROGRESS.md](/Users/nice/cody/_slack_classics/slack-c-frontend/WORK_IN_PROGRESS.md)
+- [src/App.tsx](/Users/nice/cody/_slack_classics/slack-c-frontend/src/App.tsx)
+- [worker/index.ts](/Users/nice/cody/_slack_classics/slack-c-frontend/worker/index.ts)
+- [wrangler.jsonc](/Users/nice/cody/_slack_classics/slack-c-frontend/wrangler.jsonc)
+- [migrations/d1/0001_initial.sql](/Users/nice/cody/_slack_classics/slack-c-frontend/migrations/d1/0001_initial.sql)
+- [../scripts/start-frontend-dev.sh](/Users/nice/cody/_slack_classics/scripts/start-frontend-dev.sh)
+- [scripts/hash-upload-code.mjs](/Users/nice/cody/_slack_classics/slack-c-frontend/scripts/hash-upload-code.mjs)
+
+## Local Port Contract
+
+Use a project-specific port neighborhood that stays close to your other repos without colliding with them.
+
+- `4783`: public app and Worker runtime
+- `4793`: reserved for a future admin/workbench surface
+- `4803`: reserved for a future styleguide/component-lab surface
+- `4813`: reserved for a future smoke/local harness if needed
+
+Right now, only `4783` is active.
+
+## Required Cloudflare resources
+
+These resources now exist under the allowed account:
+
+1. R2 bucket: `slack-classics-care-packages`
+2. D1 database: `slack-classics-inbox-db`
+3. Turnstile widget: production widget configured for `slackclassics.com`
+
+Production Turnstile wiring now expects:
+
+- `TURNSTILE_SITE_KEY` in `wrangler.jsonc`
+- `TURNSTILE_SECRET_KEY` as a Worker secret
+
+Important:
+- `wrangler.jsonc` is pinned to the allowed Cloudflare account ID for this project.
+- If Wrangler ever prompts for account selection, do not choose the Greenlight account for this repo.
+- The remaining manual production dependency is Turnstile. Keep `TURNSTILE_REQUIRED=true` and do not weaken it just to get uploads live faster.
+
+## Local setup
+
+1. Install dependencies:
+
+```bash
+npm install
+```
+
+2. Generate Worker types after editing bindings:
+
+```bash
+npm run cf-typegen
+```
+
+3. Apply the local D1 migration:
+
+```bash
+npx wrangler d1 migrations apply care_package_db --local
+```
+
+4. Create `.dev.vars` with your local secrets:
+
+```bash
+TURNSTILE_SECRET_KEY=...
+TURNSTILE_SITE_KEY=...
+UPLOAD_CODE_HASH_SALT=...
+```
+
+5. Start local development:
+
+```bash
+npm run dev
+```
+
+Preferred launcher, following the `_gl` repo pattern:
+
+```bash
+../scripts/start-frontend-dev.sh
+../scripts/start-frontend-dev.sh --verbose
+```
+
+Local development contract:
+
+- app URL: `http://localhost:4783`
+- log file: `/Users/nice/cody/__LOGS/slack-c-frontend-dev.log`
+
+## Upload code hashing
+
+Upload codes are stored as salted SHA-256 hashes.
+
+Generate a hash locally with:
+
+```bash
+UPLOAD_CODE_HASH_SALT="your-salt" npm run hash-code -- "your-code"
+```
+
+Then insert the hash into `upload_codes`.
+
+On macOS, the hash script also falls back to a Keychain item named `slack-c-frontend/UPLOAD_CODE_HASH_SALT`.
+
+Important:
+- Do not leave the real production upload-code salt in repo-root `.dev.vars`.
+- The current build pipeline copies `.dev.vars` into the worker build output directory, so real secrets there are too easy to package by accident.
+
+## Important notes
+
+- This foundation keeps tracking data indefinitely for now because that is the current product decision.
+- Header snapshots are truncated before storage to keep D1 rows small.
+- The Worker implementation currently expects the future frontend to upload file manifests first, then upload file bodies through API routes.
+- Download-and-delete management behavior is not implemented yet.

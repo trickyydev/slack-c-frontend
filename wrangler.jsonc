@@ -1,0 +1,52 @@
+{
+  "name": "slack-c-frontend",
+  "account_id": "c720a46967ac565c8319ce48e3c2bcff",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-04-22",
+  "assets": {
+    "not_found_handling": "single-page-application"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "BUCKET_CAP_BYTES": "10737418240",
+    "PUBLIC_HOURLY_CAP_BYTES": "6442450944",
+    "PUBLIC_PACKAGE_CAP_BYTES": "2147483648",
+    "UPLOAD_SESSION_TTL_MINUTES": "1440",
+    "MULTIPART_CHUNK_SIZE_BYTES": "8388608",
+    "DIRECT_UPLOAD_MAX_BYTES": "33554432",
+    "HEADER_SNAPSHOT_MAX_BYTES": "4096",
+    "MAX_FILES_PER_CARE_PACKAGE": "5000",
+    "TURNSTILE_REQUIRED": "true",
+    "TURNSTILE_SITE_KEY": "0x4AAAAAADBYyub91SynolVX"
+  },
+  "r2_buckets": [
+    {
+      "binding": "UPLOADS_BUCKET",
+      "bucket_name": "slack-classics-care-packages"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "slack-classics-inbox-db",
+      "database_id": "85eedd9c-087d-42c1-9e18-86f239c222f1",
+      "migrations_dir": "migrations/d1"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "QUOTA_COORDINATOR",
+        "class_name": "QuotaCoordinator"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["QuotaCoordinator"]
+    }
+  ]
+}
