@@ -6,9 +6,11 @@ Cloudflare-first upload app foundation for a public `/inbox` route where people 
 
 1. `README.md`
 2. `WORK_IN_PROGRESS.md`
-3. `wrangler.jsonc`
-4. `worker/index.ts`
-5. component and script docs as needed
+3. `DIRECTORY.md`
+4. `DEV_OPS.md`
+5. `wrangler.jsonc`
+6. `worker/index.ts`
+7. component and script docs as needed
 
 ## Cloudflare Account Safety
 
@@ -32,6 +34,20 @@ This rule is important enough to treat as an operator safety requirement, not a 
 - Cloudflare D1 for care package metadata
 - Cloudflare Durable Objects for atomic quota reservations
 - Cloudflare Turnstile for upload verification
+
+## Live URLs
+
+Route directory:
+- [DIRECTORY.md](/Users/nice/cody/_slack_classics/slack-c-frontend/DIRECTORY.md)
+
+Current live surfaces:
+- production root: `https://www.slackclassics.com`
+- production workers.dev: `https://slack-c-frontend.fixxer-workers.workers.dev`
+
+Important:
+- production root is currently serving the app shell
+- `/inbox` route behavior is still being normalized at the app-routing level
+- use `DIRECTORY.md` as the quick-reference route sheet instead of scattering URLs through diary notes
 
 ## Current scope
 
@@ -68,6 +84,8 @@ These are wired as environment variables today and can move into the admin panel
 ## Project layout
 
 - [WORK_IN_PROGRESS.md](/Users/nice/cody/_slack_classics/slack-c-frontend/WORK_IN_PROGRESS.md)
+- [DIRECTORY.md](/Users/nice/cody/_slack_classics/slack-c-frontend/DIRECTORY.md)
+- [DEV_OPS.md](/Users/nice/cody/_slack_classics/slack-c-frontend/DEV_OPS.md)
 - [src/App.tsx](/Users/nice/cody/_slack_classics/slack-c-frontend/src/App.tsx)
 - [worker/index.ts](/Users/nice/cody/_slack_classics/slack-c-frontend/worker/index.ts)
 - [wrangler.jsonc](/Users/nice/cody/_slack_classics/slack-c-frontend/wrangler.jsonc)
@@ -85,6 +103,30 @@ Use a project-specific port neighborhood that stays close to your other repos wi
 - `4813`: reserved for a future smoke/local harness if needed
 
 Right now, only `4783` is active.
+
+## Repository Model
+
+This repo lives inside the local coordinator workspace:
+- monoproject root: `/Users/nice/cody/_slack_classics`
+
+Current sibling repos:
+- `/Users/nice/cody/_slack_classics/slack-c-frontend`
+- `/Users/nice/cody/_slack_classics/slack-classics-frontend-proto`
+
+Commits and pushes happen inside each repo, not at the monoproject root.
+
+## Huddle
+
+A huddle is the standard project synchronization pass for this repo.
+
+Huddle checklist:
+1. Read `WORK_IN_PROGRESS.md` (`Brief`, then `TODO`).
+2. Update active TODO status and near-term priorities.
+3. Add a short diary note with what changed, decisions, and immediate next step.
+4. Synchronize any docs touched by the work (`README`, `DIRECTORY`, `DEV_OPS`, component docs as needed).
+
+Target outcome:
+- Someone can open `README.md`, then `WORK_IN_PROGRESS.md`, and understand what is in progress right now without relying on chat memory.
 
 ## Required Cloudflare resources
 
@@ -121,16 +163,19 @@ npm run cf-typegen
 3. Apply the local D1 migration:
 
 ```bash
-npx wrangler d1 migrations apply care_package_db --local
+npx wrangler d1 migrations apply slack-classics-inbox-db --local
 ```
 
-4. Create `.dev.vars` with your local secrets:
+4. Add local secrets only when needed:
 
 ```bash
 TURNSTILE_SECRET_KEY=...
 TURNSTILE_SITE_KEY=...
-UPLOAD_CODE_HASH_SALT=...
 ```
+
+Important:
+- do not store the production `UPLOAD_CODE_HASH_SALT` in repo-root `.dev.vars`
+- the upload-code hash helper can read the salt from macOS Keychain instead
 
 5. Start local development:
 
@@ -174,3 +219,4 @@ Important:
 - Header snapshots are truncated before storage to keep D1 rows small.
 - The Worker implementation currently expects the future frontend to upload file manifests first, then upload file bodies through API routes.
 - Download-and-delete management behavior is not implemented yet.
+- Active operational state belongs in [WORK_IN_PROGRESS.md](/Users/nice/cody/_slack_classics/slack-c-frontend/WORK_IN_PROGRESS.md), not in ad hoc chat-only memory.

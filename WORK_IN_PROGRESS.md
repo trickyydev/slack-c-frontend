@@ -11,17 +11,13 @@
 > *When the project meaningfully changes direction or scope, update this file before moving on.*
 
 # Brief
-Updated: 2026-04-22 19:50 EDT (-0400)
+Updated: 2026-04-23 15:02 EDT (-0400)
 
-- Active work is focused on backend-first architecture for the Care Package inbox app in `/Users/nice/cody/_slack_classics/slack-c-frontend`.
-- Current stack is React + Vite + Cloudflare Worker assets, with R2, D1, Durable Objects, and Turnstile planned as the core platform pieces.
-- Public uploads are intended to stay frictionless, with a rolling hourly cap and absolute bucket cap enforced via reserved bytes.
-- Local development conventions are starting to mirror `/Users/nice/cody/_gl`, including fixed ports, a root launcher script, global logs, and a WIP-first documentation pattern.
-- The main app now has a first real inbox UI: one-column, upload-first, with `Anon` versus `Invite` gating based on the focused prototype direction.
-- Production Cloudflare resources now exist under the allowed account for this repo:
-  - R2 bucket `slack-classics-care-packages`
-  - D1 database `slack-classics-inbox-db`
-- Production Turnstile keys are now wired into the Worker configuration path.
+- Active work is now split between two tracks: real upload functionality and repo organization/operability.
+- Current stack is React + Vite + Cloudflare Worker assets, with R2, D1, Durable Objects, and Turnstile as the core platform pieces.
+- Public site is live on `https://www.slackclassics.com`, with `workers.dev` still available as a fallback runtime.
+- Local development conventions now intentionally mirror `/Users/nice/cody/_gl`: fixed ports, root launcher scripts, global logs, route directory, deployment runbook, and WIP-first memory.
+- The next product breakpoint is still the real browser upload flow; the first browser-side upload pass is now wired, and the next step is live-browser verification on the real domain.
 
 ## Important Safety Rule
 
@@ -32,21 +28,78 @@ Updated: 2026-04-22 19:50 EDT (-0400)
 
 ### Active TODO (Top 5)
 
+- [ ] Make the real domain upload flow testable end to end: file picking, Turnstile, session creation, and first successful upload into R2/D1.
 - [ ] Build the actual `/inbox` uploader UI on top of the current Worker API foundation.
-- [ ] Add the next layer of `_gl`-style repo ergonomics: more launcher scripts, a stronger root command surface, and clearer operator docs.
-- [ ] Decide the future local port contract for admin and design/reference surfaces, even if only the public app runs today.
+- [ ] Split frontend app routing cleanly so `/`, `/inbox`, and future `/admin` can diverge without route confusion.
 - [ ] Add a first-pass local setup flow for Cloudflare resources and secrets so a fresh machine can bootstrap more easily.
 - [ ] Design the authenticated management area for browsing, downloading, confirming, and deleting completed or failed care packages.
 
 ### Parked TODO (Not Active)
 
 - [ ] Decide whether this repo should eventually have a separate styleguide or component-lab surface like `_gl`.
+- [ ] Add a lightweight deployed smoke checklist once browser upload flow exists.
 - [ ] Add cleanup tooling for expired multipart uploads and abandoned reservations.
 - [ ] Add retention controls for tracking metadata, including optional purge rules for IP/header snapshots.
 - [ ] Implement download-confirm-delete workflow in the admin side after the management UI exists.
 - [ ] Add smoke/integration coverage once the uploader UI and admin routes stabilize.
 
 # Diary
+
+### 2026-04-23 15:02 EDT (-0400): Huddle - First Browser Upload Path Wired
+
+- Replaced the static inbox shell with a first real browser-to-backend upload flow.
+- The frontend now does the following against the live Worker API:
+  - loads public config
+  - initializes invisible Turnstile explicitly for the SPA
+  - selects files or folders
+  - creates an upload session
+  - uploads direct files
+  - uploads multipart files part-by-part
+  - finalizes the care package
+- Kept the current UI shape mostly intact while adding:
+  - selected-file list
+  - upload status and progress surface
+  - real submit behavior
+- Current caveats after this pass:
+  - route separation between `/` and `/inbox` is still deferred
+  - invite-only extra fields are still folded into the existing backend comment model rather than having dedicated schema
+  - real browser verification is still needed on the production domain before calling this flow stable
+- Verification completed in-repo:
+  - `npm run build`
+  - `npm run lint`
+
+### 2026-04-23 14:19 EDT (-0400): Huddle - Organization Sync Before Upload Wiring
+
+- Ran a real huddle pass instead of continuing ad hoc.
+- Locked the immediate focus back onto product execution after the docs/ops pass:
+  - first real browser upload flow on the live domain
+  - route cleanup after the upload path is functioning
+- Made `Huddle` explicit in `README.md` so the process is now part of the repo contract, not just a verbal habit carried over from Greenlight.
+- Current working state after this sync:
+  - docs are now split cleanly across `README.md`, `DIRECTORY.md`, `DEV_OPS.md`, and `WORK_IN_PROGRESS.md`
+  - production app shell is live on `https://www.slackclassics.com`
+  - next meaningful milestone is the first successful browser-to-R2/D1 upload from the real site
+  - after that, the next routing milestone is separating `/`, `/inbox`, and future `/admin`
+
+### 2026-04-23 14:20 EDT (-0400): Huddle - Greenlight Documentation Pattern Ported Further
+
+- Did a second focused pass through `/Users/nice/cody/_gl` with an operations/task-tracking lens rather than a product-architecture lens.
+- The most transferable Greenlight patterns for this repo were:
+  - one authoritative read order
+  - one active task/diary file
+  - one route directory
+  - one deploy/operator runbook
+  - one clear split between quick links, operational commands, and active memory
+- Added the missing docs to Slack Classics:
+  - `DIRECTORY.md`
+  - `DEV_OPS.md`
+- Tightened `README.md` so it now reads more like an operator front door and less like a one-off setup note.
+- Current documentation split is now:
+  - `README.md` for onboarding and repo contract
+  - `DIRECTORY.md` for quick links and route references
+  - `DEV_OPS.md` for deploy/account/secret procedures
+  - `WORK_IN_PROGRESS.md` for active tasks and implementation diary
+  - the next useful organizational step after upload wiring is likely a lightweight deployed smoke checklist
 
 ### 2026-04-22 16:05 EDT (-0400): Huddle - Focused Inbox UI Ported Into Main App
 
