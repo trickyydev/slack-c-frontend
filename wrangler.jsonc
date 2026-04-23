@@ -11,7 +11,7 @@
   },
   "routes": [
     {
-      "pattern": "www.slackclassics.com/inbox*",
+      "pattern": "www.slackclassics.com/*",
       "zone_name": "slackclassics.com"
     }
   ],
