@@ -9,6 +9,12 @@
   "observability": {
     "enabled": true
   },
+  "routes": [
+    {
+      "pattern": "www.slackclassics.com/inbox*",
+      "zone_name": "slackclassics.com"
+    }
+  ],
   "vars": {
     "BUCKET_CAP_BYTES": "10737418240",
     "PUBLIC_HOURLY_CAP_BYTES": "6442450944",
