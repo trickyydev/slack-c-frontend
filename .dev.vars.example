@@ -1,3 +1,6 @@
 TURNSTILE_SECRET_KEY=replace-me
 TURNSTILE_SITE_KEY=replace-me
+LOCAL_TURNSTILE_BYPASS=true
+ADMIN_PASSWORD=replace-me
+ADMIN_SESSION_SECRET=replace-me-with-a-different-long-random-string
 UPLOAD_CODE_HASH_SALT=replace-me-with-a-long-random-string

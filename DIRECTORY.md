@@ -6,6 +6,7 @@ Quick links for local testing and live environments.
 
 **Frontend root**
 Local: [http://localhost:4783](http://localhost:4783)
+Tunnel: [https://4783.slackclassics.com](https://4783.slackclassics.com)
 Production: [https://www.slackclassics.com](https://www.slackclassics.com)
 
 **Workers.dev fallback**
@@ -13,20 +14,23 @@ Production: [https://slack-c-frontend.fixxer-workers.workers.dev](https://slack-
 
 **API health**
 Local: [http://localhost:4783/api/health](http://localhost:4783/api/health)
+Tunnel: [https://4783.slackclassics.com/api/health](https://4783.slackclassics.com/api/health)
 Production: [https://www.slackclassics.com/api/health](https://www.slackclassics.com/api/health)
 
 **Public config**
 Local: [http://localhost:4783/api/public-config](http://localhost:4783/api/public-config)
+Tunnel: [https://4783.slackclassics.com/api/public-config](https://4783.slackclassics.com/api/public-config)
 Production: [https://www.slackclassics.com/api/public-config](https://www.slackclassics.com/api/public-config)
 
 ## Services
 
 **Frontend root**
 Local: [http://localhost:4783](http://localhost:4783)
+Tunnel: [https://4783.slackclassics.com](https://4783.slackclassics.com)
 Production: [https://www.slackclassics.com](https://www.slackclassics.com)
 
-**Workers.dev root**
-Production: [https://slack-c-frontend.fixxer-workers.workers.dev](https://slack-c-frontend.fixxer-workers.workers.dev)
+**Tunnel dev host**
+Tunnel: [https://4783.slackclassics.com](https://4783.slackclassics.com)
 
 **Prototype root**
 Local: [http://localhost:4823](http://localhost:4823)
@@ -37,12 +41,13 @@ Local: [http://localhost:4823](http://localhost:4823)
 Production: [https://www.slackclassics.com](https://www.slackclassics.com)
 Notes: currently acting as the inbox surface while route design is still settling
 
+**Current dev-host app shell**
+Tunnel: [https://4783.slackclassics.com](https://4783.slackclassics.com)
+Notes: current local-through-tunnel testing surface; browser logging still needs to catch up to this hostname
+
 **Current intended inbox route**
 Production: [https://www.slackclassics.com/inbox](https://www.slackclassics.com/inbox)
 Notes: route exists as a product intention, but frontend app-level routing still needs to catch up
-
-**Workers.dev health**
-Production: [https://slack-c-frontend.fixxer-workers.workers.dev/api/health](https://slack-c-frontend.fixxer-workers.workers.dev/api/health)
 
 ## Future Reserved Surfaces
 
@@ -64,3 +69,4 @@ Notes: reserved; not implemented yet
 - Keep this file focused on quick-open links and route notes.
 - Keep deeper operational procedures in `DEV_OPS.md`.
 - Keep active work tracking in `WORK_IN_PROGRESS.md`.
+- Prefer the tunnel host and production host over the account-level `workers.dev` URL for day-to-day testing.

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import AdminApp from './AdminApp'
 import './App.css'
 
 type Mode = 'anon' | 'invite'
@@ -155,11 +156,23 @@ async function parseErrorMessage(response: Response) {
   try {
     const payload = (await response.json()) as {
       message?: string
+      error?: {
+        message?: string
+        details?: { errors?: string[] }
+      }
       details?: { errors?: string[] }
+    }
+
+    if (payload?.error?.details?.errors?.length) {
+      return payload.error.details.errors.join(', ')
     }
 
     if (payload?.details?.errors?.length) {
       return payload.details.errors.join(', ')
+    }
+
+    if (payload?.error?.message) {
+      return payload.error.message
     }
 
     if (payload?.message) {
@@ -172,7 +185,7 @@ async function parseErrorMessage(response: Response) {
   return response.statusText || 'Request failed.'
 }
 
-function App() {
+function InboxApp() {
   const [mode, setMode] = useState<Mode>('anon')
   const [visibility, setVisibility] = useState<Visibility>('community')
   const [accessCode, setAccessCode] = useState('')
@@ -332,9 +345,12 @@ function App() {
   }
 
   async function uploadMultipartFile(carePackageIdValue: string, sessionFile: SessionFile, file: File) {
-    const startResponse = await fetch(`/api/inbox/sessions/${carePackageIdValue}/files/${sessionFile.id}/start`, {
-      method: 'POST',
-    })
+    const startResponse = await fetch(
+      `/api/inbox/sessions/${carePackageIdValue}/files/${sessionFile.id}/start`,
+      {
+        method: 'POST',
+      },
+    )
 
     if (!startResponse.ok) {
       throw new Error(await parseErrorMessage(startResponse))
@@ -391,9 +407,12 @@ function App() {
   }
 
   async function uploadDirectFile(carePackageIdValue: string, sessionFile: SessionFile, file: File) {
-    const response = await fetch(`/api/inbox/sessions/${carePackageIdValue}/files/${sessionFile.id}/start`, {
-      method: 'POST',
-    })
+    const response = await fetch(
+      `/api/inbox/sessions/${carePackageIdValue}/files/${sessionFile.id}/start`,
+      {
+        method: 'POST',
+      },
+    )
 
     if (!response.ok) {
       throw new Error(await parseErrorMessage(response))
@@ -541,7 +560,7 @@ function App() {
             <p className="dropzone-title">Drop files or choose a folder</p>
             <div className="dropzone-actions">
               <button disabled={isUploading} onClick={() => fileInputRef.current?.click()} type="button">
-                Choose files
+                Files
               </button>
               <button
                 className="ghost-button"
@@ -549,7 +568,7 @@ function App() {
                 onClick={() => folderInputRef.current?.click()}
                 type="button"
               >
-                Choose folder
+                Folder
               </button>
               <button
                 className="ghost-button"
@@ -706,7 +725,7 @@ function App() {
               {isUploading
                 ? 'Uploading...'
                 : mode === 'anon'
-                  ? 'Send anonymous care package'
+                  ? 'Post it ✌️'
                   : 'Send invited care package'}
             </button>
           </div>
@@ -715,6 +734,15 @@ function App() {
       <div aria-hidden="true" className="turnstile-slot" ref={turnstileContainerRef} />
     </main>
   )
+}
+
+function App() {
+  const path = window.location.pathname
+  if (path.startsWith('/admin')) {
+    return <AdminApp />
+  }
+
+  return <InboxApp />
 }
 
 export default App

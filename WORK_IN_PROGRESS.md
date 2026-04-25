@@ -11,13 +11,15 @@
 > *When the project meaningfully changes direction or scope, update this file before moving on.*
 
 # Brief
-Updated: 2026-04-23 15:02 EDT (-0400)
+Updated: 2026-04-25 14:02 EDT (-0400)
 
-- Active work is now split between two tracks: real upload functionality and repo organization/operability.
+- Active work is now centered on production-backed local development and observability rather than pure scaffolding.
 - Current stack is React + Vite + Cloudflare Worker assets, with R2, D1, Durable Objects, and Turnstile as the core platform pieces.
-- Public site is live on `https://www.slackclassics.com`, with `workers.dev` still available as a fallback runtime.
-- Local development conventions now intentionally mirror `/Users/nice/cody/_gl`: fixed ports, root launcher scripts, global logs, route directory, deployment runbook, and WIP-first memory.
-- The next product breakpoint is still the real browser upload flow; the first browser-side upload pass is now wired, and the next step is live-browser verification on the real domain.
+- Public site is live on `https://www.slackclassics.com`.
+- Local dev now has a named Cloudflare Tunnel path on `https://4783.slackclassics.com`, so local browser testing can happen on a real Slack Classics hostname instead of raw `localhost`.
+- A real upload has already succeeded through the current local-plus-production workflow and landed in production D1/R2.
+- A first private `/admin` path now exists with backend password auth, browser-stored signed sessions, and a read-only recent upload trail.
+- The admin path now uses `HttpOnly` cookie sessions signed with a separate backend secret instead of browser-stored tokens.
 
 ## Important Safety Rule
 
@@ -28,14 +30,16 @@ Updated: 2026-04-23 15:02 EDT (-0400)
 
 ### Active TODO (Top 5)
 
-- [ ] Make the real domain upload flow testable end to end: file picking, Turnstile, session creation, and first successful upload into R2/D1.
+- [ ] Rework the shared browser logging flow so browser console/errors are captured reliably for tunnel-host testing, not just `localhost`.
+- [ ] Tighten the current upload UI feedback so successful uploads are obvious without checking D1 manually.
 - [ ] Build the actual `/inbox` uploader UI on top of the current Worker API foundation.
 - [ ] Split frontend app routing cleanly so `/`, `/inbox`, and future `/admin` can diverge without route confusion.
-- [ ] Add a first-pass local setup flow for Cloudflare resources and secrets so a fresh machine can bootstrap more easily.
-- [ ] Design the authenticated management area for browsing, downloading, confirming, and deleting completed or failed care packages.
+- [ ] Replace stale `workers.dev` fallback assumptions in docs and workflows with the current production-host and tunnel-host model.
+- [ ] Expand the new `/admin` path from read-only trail to real management actions: download, confirm, delete, and failed-upload cleanup.
 
 ### Parked TODO (Not Active)
 
+- [ ] Decide whether to keep any `workers.dev` URL in the operator workflow once custom-host and tunnel-host development are stable.
 - [ ] Decide whether this repo should eventually have a separate styleguide or component-lab surface like `_gl`.
 - [ ] Add a lightweight deployed smoke checklist once browser upload flow exists.
 - [ ] Add cleanup tooling for expired multipart uploads and abandoned reservations.
@@ -44,6 +48,56 @@ Updated: 2026-04-23 15:02 EDT (-0400)
 - [ ] Add smoke/integration coverage once the uploader UI and admin routes stabilize.
 
 # Diary
+
+### 2026-04-25 12:12 EDT (-0400): Huddle - Production-Backed Local Upload Verified, Logging Gap Confirmed
+
+- Local development is now running against real project infrastructure instead of a local D1-first path.
+- Added a named Cloudflare Tunnel under the allowed account:
+  - `slack-c-frontend-dev`
+  - `104c44aa-eb4d-424b-b19e-13467616d137`
+- Current practical dev-host surface is:
+  - `https://4783.slackclassics.com`
+- Updated Vite local-server host allowance so the tunnel hostname can reach the local app cleanly.
+- Reworked local API flow so the browser uses same-origin `/api` requests and Vite proxies those requests upstream, instead of making direct cross-origin browser fetches.
+- Confirmed a real production-backed upload completed successfully from the current workflow:
+  - care package: `cp_5e22db32042f48088c38b8d8aaa6825b`
+  - file: `02. nthng - I Just Am.mp3`
+  - final status: `completed`
+- The main remaining debugging problem is not the upload path itself. It is the shared browser logging setup:
+  - the current CDP logger filters by one origin only
+  - the launcher is still telling it to watch `http://localhost:4783`
+  - real testing now happens on `https://4783.slackclassics.com`
+  - as a result, tunnel-host console errors are mostly invisible in the combined dev log
+- Next step after this huddle:
+  - redesign the shared browser logging runner so it can capture one or more explicit browser origins and stay reusable across projects
+
+### 2026-04-25 14:02 EDT (-0400): Huddle - First Private Admin Trail Added
+
+- Added a backend admin auth path based on a single secret password:
+  - `POST /api/admin/session`
+  - `GET /api/admin/session`
+  - `GET /api/admin/care-packages`
+- Admin sessions are signed and time-limited on the backend, but stored in browser storage on the frontend to keep the auth model simple.
+- Added a first `/admin` UI:
+  - password gate
+  - browser-stored session token
+  - recent care-package trail
+  - file list per package
+  - basic sender/comment/tracking summary
+- This is intentionally a first private read-only management pass, not the final admin tool.
+- Current missing step before production use:
+  - set `ADMIN_PASSWORD` as a Cloudflare Worker secret
+
+### 2026-04-25 14:28 EDT (-0400): Huddle - Admin Auth Hardened To Cookie Sessions
+
+- Replaced admin localStorage token handling with backend-issued `HttpOnly` cookies.
+- Added `POST /api/admin/logout`.
+- Admin API checks now accept the signed admin session cookie and still centralize protection through `requireAdminSession(...)`.
+- Added a separate signing secret:
+  - `ADMIN_SESSION_SECRET`
+  - monoproject source key: `SLACK_CLASSICS_ADMIN_SESSION_SECRET`
+- Uploaded `ADMIN_SESSION_SECRET` to the Slack Classics Worker.
+- This keeps the admin password out of the frontend and keeps the admin session token out of browser storage.
 
 ### 2026-04-23 15:02 EDT (-0400): Huddle - First Browser Upload Path Wired
 

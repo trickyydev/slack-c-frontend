@@ -96,6 +96,16 @@ interface UploadCodeRow {
   last_used_at: string | null
 }
 
+interface AdminSessionClaims {
+  scope: 'admin'
+  iat: number
+  exp: number
+}
+
+interface AdminLoginBody {
+  password?: unknown
+}
+
 interface UploadedPartRecord {
   partNumber: number
   etag: string
@@ -137,16 +147,22 @@ interface QuotaResponse {
 }
 
 type RuntimeEnv = Env & {
+  ADMIN_PASSWORD?: string
+  ADMIN_SESSION_SECRET?: string
+  ADMIN_SESSION_TTL_HOURS?: string
+  LOCAL_TURNSTILE_BYPASS?: string
   TURNSTILE_SECRET_KEY?: string
   UPLOAD_CODE_HASH_SALT?: string
 }
 
 const FIVE_MIB = 5 * 1024 * 1024
 const ONE_HOUR_MS = 60 * 60 * 1000
+const ADMIN_SESSION_COOKIE = 'slack_classics_admin_session'
 
 export default {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url)
+    const localTurnstileBypass = isLocalTurnstileBypassEnabled(request, env)
 
     if (!url.pathname.startsWith('/api/')) {
       return new Response('Not found', { status: 404 })
@@ -168,8 +184,8 @@ export default {
         path: '/inbox',
         supportsFolderUpload: true,
         supportsUploadCodes: true,
-        turnstileRequired: config.turnstileRequired,
-        turnstileSiteKey: config.turnstileSiteKey,
+        turnstileRequired: localTurnstileBypass ? false : config.turnstileRequired,
+        turnstileSiteKey: localTurnstileBypass ? null : config.turnstileSiteKey,
         limits: {
           bucketCapBytes: config.bucketCapBytes,
           publicHourlyCapBytes: config.publicHourlyCapBytes,
@@ -179,6 +195,22 @@ export default {
           maxFilesPerCarePackage: config.maxFilesPerCarePackage,
         },
       })
+    }
+
+    if (request.method === 'POST' && path.length === 3 && matches(path, 'api', 'admin', 'session')) {
+      return createAdminSession(request, env)
+    }
+
+    if (request.method === 'GET' && path.length === 3 && matches(path, 'api', 'admin', 'session')) {
+      return getAdminSession(request, env)
+    }
+
+    if (request.method === 'POST' && path.length === 3 && matches(path, 'api', 'admin', 'logout')) {
+      return clearAdminSession(request)
+    }
+
+    if (request.method === 'GET' && path.length === 3 && matches(path, 'api', 'admin', 'care-packages')) {
+      return listAdminCarePackages(request, env)
     }
 
     if (request.method === 'POST' && path.length === 3 && matches(path, 'api', 'inbox', 'sessions')) {
@@ -1210,6 +1242,123 @@ async function cancelUploadSession(
   return jsonResponse(serializeCarePackage(updated, updatedFiles))
 }
 
+async function createAdminSession(request: Request, env: RuntimeEnv): Promise<Response> {
+  const adminConfig = getAdminAuthConfig(env)
+  if (!adminConfig.enabled) {
+    return errorResponse(503, 'admin_not_configured', 'Admin password is not configured.')
+  }
+
+  const body = await readJson<AdminLoginBody>(request)
+  const password = normalizeText(body?.password, 4_096)
+  if (!password) {
+    return errorResponse(400, 'missing_password', 'Password is required.')
+  }
+
+  if (!constantTimeEqual(password, adminConfig.password)) {
+    return errorResponse(403, 'invalid_admin_password', 'Admin password is invalid.')
+  }
+
+  const nowMs = Date.now()
+  const expiresAtMs = nowMs + adminConfig.sessionTtlHours * 60 * 60 * 1000
+  const token = await signAdminSessionToken(
+    {
+      scope: 'admin',
+      iat: nowMs,
+      exp: expiresAtMs,
+    },
+    adminConfig.signingSecret,
+  )
+
+  return jsonResponse(
+    {
+      ok: true,
+      expiresAt: new Date(expiresAtMs).toISOString(),
+    },
+    200,
+    {
+      'set-cookie': buildAdminSessionCookie(token, expiresAtMs, request),
+    },
+  )
+}
+
+async function getAdminSession(request: Request, env: RuntimeEnv): Promise<Response> {
+  const session = await requireAdminSession(request, env)
+  if ('response' in session) {
+    return session.response
+  }
+
+  return jsonResponse({
+    ok: true,
+    scope: session.claims.scope,
+    expiresAt: new Date(session.claims.exp).toISOString(),
+  })
+}
+
+async function clearAdminSession(request: Request): Promise<Response> {
+  return jsonResponse(
+    {
+      ok: true,
+    },
+    200,
+    {
+      'set-cookie': buildExpiredAdminSessionCookie(request),
+    },
+  )
+}
+
+async function listAdminCarePackages(request: Request, env: RuntimeEnv): Promise<Response> {
+  const session = await requireAdminSession(request, env)
+  if ('response' in session) {
+    return session.response
+  }
+
+  const url = new URL(request.url)
+  const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 20, 1), 50)
+  const carePackages = await listRecentCarePackages(env, limit)
+  const carePackagesWithFiles = await Promise.all(
+    carePackages.map(async (carePackage) => ({
+      carePackage,
+      files: await listCarePackageFiles(env, carePackage.id),
+    })),
+  )
+
+  return jsonResponse({
+    items: carePackagesWithFiles.map(({ carePackage, files }) => ({
+      carePackage: {
+        id: carePackage.id,
+        status: carePackage.status,
+        senderName: carePackage.sender_name,
+        comment: carePackage.comment,
+        quotaMode: carePackage.quota_mode,
+        declaredBytes: carePackage.declared_bytes,
+        committedBytes: carePackage.committed_bytes,
+        fileCount: carePackage.file_count,
+        createdAt: carePackage.created_at,
+        updatedAt: carePackage.updated_at,
+        completedAt: carePackage.completed_at,
+        tracking: {
+          ipAddress: carePackage.ip_address,
+          userAgent: carePackage.user_agent,
+          cf: summarizeCfTracking(parseNullableJson(carePackage.request_cf_json)),
+        },
+      },
+      files: files.map((file) => ({
+        id: file.id,
+        relativePath: file.relative_path,
+        fileName: file.file_name,
+        objectKey: file.object_key,
+        sizeBytes: file.size_bytes,
+        status: file.status,
+        uploadedBytes: file.uploaded_bytes,
+        completedParts: file.completed_parts,
+        createdAt: file.created_at,
+        updatedAt: file.updated_at,
+        completedAt: file.completed_at,
+      })),
+    })),
+  })
+}
+
 function getConfig(env: RuntimeEnv): AppConfig {
   return {
     bucketCapBytes: readInt(env.BUCKET_CAP_BYTES, 10 * 1024 * 1024 * 1024),
@@ -1238,18 +1387,235 @@ function readBoolean(input: string | undefined, fallback: boolean): boolean {
   return ['1', 'true', 'yes', 'on'].includes(input.toLowerCase())
 }
 
+function getAdminAuthConfig(env: RuntimeEnv): {
+  enabled: boolean
+  password: string
+  signingSecret: string
+  sessionTtlHours: number
+} {
+  const password = normalizeText(env.ADMIN_PASSWORD, 4_096) ?? ''
+  const signingSecret = normalizeText(env.ADMIN_SESSION_SECRET, 4_096) ?? ''
+  return {
+    enabled: Boolean(password && signingSecret),
+    password,
+    signingSecret,
+    sessionTtlHours: readInt(env.ADMIN_SESSION_TTL_HOURS, 24 * 14),
+  }
+}
+
 function matches(parts: string[], ...expected: string[]): boolean {
   return parts.length === expected.length && parts.every((part, index) => part === expected[index])
 }
 
-function jsonResponse(data: unknown, status = 200): Response {
+function jsonResponse(data: unknown, status = 200, extraHeaders?: HeadersInit): Response {
+  const headers = new Headers(extraHeaders)
+  headers.set('content-type', 'application/json; charset=utf-8')
+  headers.set('cache-control', 'no-store')
   return new Response(JSON.stringify(data, null, 2), {
     status,
-    headers: {
-      'content-type': 'application/json; charset=utf-8',
-      'cache-control': 'no-store',
-    },
+    headers,
   })
+}
+
+function constantTimeEqual(left: string, right: string): boolean {
+  const leftBytes = new TextEncoder().encode(left)
+  const rightBytes = new TextEncoder().encode(right)
+  const maxLength = Math.max(leftBytes.length, rightBytes.length)
+  let diff = leftBytes.length === rightBytes.length ? 0 : 1
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const leftValue = leftBytes[index] ?? 0
+    const rightValue = rightBytes[index] ?? 0
+    diff |= leftValue ^ rightValue
+  }
+
+  return diff === 0
+}
+
+async function hmacSign(secret: string, input: string): Promise<Uint8Array> {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    {
+      name: 'HMAC',
+      hash: 'SHA-256',
+    },
+    false,
+    ['sign'],
+  )
+
+  const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(input))
+  return new Uint8Array(signature)
+}
+
+function bytesToBase64Url(bytes: Uint8Array): string {
+  let binary = ''
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte)
+  }
+
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+
+function base64UrlToBytes(input: string): Uint8Array {
+  const padded = input.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(input.length / 4) * 4, '=')
+  const binary = atob(padded)
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0))
+}
+
+function textToBase64Url(input: string): string {
+  return bytesToBase64Url(new TextEncoder().encode(input))
+}
+
+function base64UrlToText(input: string): string {
+  return new TextDecoder().decode(base64UrlToBytes(input))
+}
+
+async function signAdminSessionToken(claims: AdminSessionClaims, secret: string): Promise<string> {
+  const payload = textToBase64Url(JSON.stringify(claims))
+  const signature = bytesToBase64Url(await hmacSign(secret, payload))
+  return `${payload}.${signature}`
+}
+
+async function verifyAdminSessionToken(token: string, secret: string): Promise<AdminSessionClaims | null> {
+  const [payload, signature] = token.split('.')
+  if (!payload || !signature) {
+    return null
+  }
+
+  const expectedSignature = bytesToBase64Url(await hmacSign(secret, payload))
+  if (!constantTimeEqual(signature, expectedSignature)) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(base64UrlToText(payload)) as Partial<AdminSessionClaims>
+    if (parsed.scope !== 'admin' || typeof parsed.iat !== 'number' || typeof parsed.exp !== 'number') {
+      return null
+    }
+
+    return {
+      scope: 'admin',
+      iat: parsed.iat,
+      exp: parsed.exp,
+    }
+  } catch {
+    return null
+  }
+}
+
+function getBearerToken(request: Request): string | null {
+  const authorization = request.headers.get('authorization')
+  if (!authorization) {
+    return null
+  }
+
+  const [scheme, token] = authorization.split(/\s+/, 2)
+  if (scheme?.toLowerCase() !== 'bearer' || !token) {
+    return null
+  }
+
+  return token.trim() || null
+}
+
+function getCookieValue(request: Request, name: string): string | null {
+  const cookieHeader = request.headers.get('cookie')
+  if (!cookieHeader) {
+    return null
+  }
+
+  const parts = cookieHeader.split(/;\s*/)
+  for (const part of parts) {
+    const [cookieName, ...rest] = part.split('=')
+    if (cookieName === name) {
+      return rest.join('=').trim() || null
+    }
+  }
+
+  return null
+}
+
+function isSecureRequest(request: Request): boolean {
+  return new URL(request.url).protocol === 'https:'
+}
+
+function buildCookie({
+  name,
+  value,
+  maxAgeSeconds,
+  request,
+}: {
+  name: string
+  value: string
+  maxAgeSeconds: number
+  request: Request
+}): string {
+  const segments = [
+    `${name}=${value}`,
+    'Path=/api/admin',
+    'HttpOnly',
+    'SameSite=Strict',
+    `Max-Age=${Math.max(0, Math.floor(maxAgeSeconds))}`,
+  ]
+
+  if (isSecureRequest(request)) {
+    segments.push('Secure')
+  }
+
+  return segments.join('; ')
+}
+
+function buildAdminSessionCookie(token: string, expiresAtMs: number, request: Request): string {
+  const maxAgeSeconds = Math.max(0, Math.floor((expiresAtMs - Date.now()) / 1000))
+  return buildCookie({
+    name: ADMIN_SESSION_COOKIE,
+    value: token,
+    maxAgeSeconds,
+    request,
+  })
+}
+
+function buildExpiredAdminSessionCookie(request: Request): string {
+  return buildCookie({
+    name: ADMIN_SESSION_COOKIE,
+    value: '',
+    maxAgeSeconds: 0,
+    request,
+  })
+}
+
+async function requireAdminSession(
+  request: Request,
+  env: RuntimeEnv,
+): Promise<{ claims: AdminSessionClaims } | { response: Response }> {
+  const adminConfig = getAdminAuthConfig(env)
+  if (!adminConfig.enabled) {
+    return {
+      response: errorResponse(503, 'admin_not_configured', 'Admin password is not configured.'),
+    }
+  }
+
+  const token = getCookieValue(request, ADMIN_SESSION_COOKIE) ?? getBearerToken(request)
+  if (!token) {
+    return {
+      response: errorResponse(401, 'missing_admin_session', 'Admin session is required.'),
+    }
+  }
+
+  const claims = await verifyAdminSessionToken(token, adminConfig.signingSecret)
+  if (!claims) {
+    return {
+      response: errorResponse(401, 'invalid_admin_session', 'Admin session is invalid.'),
+    }
+  }
+
+  if (claims.exp <= Date.now()) {
+    return {
+      response: errorResponse(401, 'expired_admin_session', 'Admin session has expired.'),
+    }
+  }
+
+  return { claims }
 }
 
 function errorResponse(
@@ -1407,6 +1773,10 @@ async function validateTurnstile(
   config: AppConfig,
   token: string | null,
 ): Promise<{ ok: true } | { ok: false; errors: string[] }> {
+  if (isLocalTurnstileBypassEnabled(request, env)) {
+    return { ok: true }
+  }
+
   if (!config.turnstileRequired) {
     return { ok: true }
   }
@@ -1466,6 +1836,16 @@ function snapshotHeaders(request: Request, maxBytes: number): string {
   return `${serialized.slice(0, maxBytes - 1)}…`
 }
 
+function isLocalTurnstileBypassEnabled(request: Request, env: RuntimeEnv): boolean {
+  const enabled = normalizeText(env.LOCAL_TURNSTILE_BYPASS, 32)
+  if (!enabled || !readBoolean(enabled, false)) {
+    return false
+  }
+
+  const hostname = new URL(request.url).hostname.toLowerCase()
+  return hostname === 'localhost' || hostname === '127.0.0.1'
+}
+
 async function sendQuotaRequest(
   env: RuntimeEnv,
   config: AppConfig,
@@ -1495,6 +1875,21 @@ async function getCarePackage(
       .bind(carePackageId)
       .first<CarePackageRow>()) ?? null
   )
+}
+
+async function listRecentCarePackages(env: RuntimeEnv, limit: number): Promise<CarePackageRow[]> {
+  const result = await env.DB.prepare(
+    `
+      SELECT *
+      FROM care_packages
+      ORDER BY created_at DESC
+      LIMIT ?
+    `,
+  )
+    .bind(limit)
+    .all<CarePackageRow>()
+
+  return result.results ?? []
 }
 
 async function listCarePackageFiles(
@@ -1582,6 +1977,21 @@ function parseNullableJson(input: string | null): unknown {
     return JSON.parse(input)
   } catch {
     return input
+  }
+}
+
+function summarizeCfTracking(input: unknown) {
+  if (!input || typeof input !== 'object') {
+    return null
+  }
+
+  const record = input as Record<string, unknown>
+  return {
+    country: typeof record.country === 'string' ? record.country : null,
+    region: typeof record.region === 'string' ? record.region : null,
+    city: typeof record.city === 'string' ? record.city : null,
+    timezone: typeof record.timezone === 'string' ? record.timezone : null,
+    colo: typeof record.colo === 'string' ? record.colo : null,
   }
 }
 
